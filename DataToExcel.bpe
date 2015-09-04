@@ -1,0 +1,124 @@
+' {$STAMP BS2pe}
+' {$PBASIC 2.5}
+'
+' This program is used to download data from EEPROM into an EXCEL datasheet.
+' It uses the PLX-DAQ (Parallax Microcontroller Data Acquisition for Excel)
+' software which may be download free of charge from paralax.com. After the
+' PLX-DAQ program has been downloaded and installed:
+'   1) Run the PLX-DAQ software.  It will open an EXCEL spreadsheet.  (The
+'      security level in EXCEL must be set to enable macros.)
+'   2) Open this (DataToExcel.bpe) program using the BASIC Stamp software.
+'   3) Connect the microcontroller to the computer and turn it on.
+'   4) Run this program, which will download into the microcontroller.  Make
+'      note of which COM port the computer uses for the download connection.
+'   5) LED should blink 4 times and then a DEBUG window will open with the
+'      data scrolling past.
+'   6) Close the DEBUG window.  (No need to wait until program is finished.)
+'   7) Go to the EXCEL spreadsheet with the PLX-DAQ control window.  Set the
+'      port to the COM port found in step 4.
+'   8) On the top of the spreadsheet, select enough of the columns to contain
+'      the data from each sensor plus one column for a counter, e.g., if 5
+'      sensors, select 6 columns, A-F. Right click the mouse to format the
+'      cells to [Number]-<General>. (If you do not do this step, the data
+'      still downloads, but the first column defaults to display a time, so
+'      the data will not appear correct.) When finished deselect the columns
+'      you just formated.
+'   9) Select the connect button on the PLX-DAQ control window.  The LED
+'      should blink 4 times and the data should start downloading.
+'  10) When the data is finished downloading, turn off the microcontroller.
+'  11) Open a new EXCEL spreadsheet file.
+'  12) Select the data downloaded into the PLX-DAQ EXCEL file, and copy it
+'      into the new file. Save this file with a descriptive name and close
+'      the original PLX-DAQ file.
+'
+' This version of the code utilizes only 1 EEprom memory chip.
+'
+'----------------------------------------------------
+'*** STAMP PINS ***
+'----------------------------------------------------
+
+'Out Pin Connected to Red LED
+RedLED PIN  2
+OUTPUT RedLED    'Set Pin 7 (RedLED) as an output pin
+
+'----------------------------------------------------
+'*** Program Constants ***
+'----------------------------------------------------
+
+'CONSTANTS FOR SETTING BAUD RATE FOR SERIAL COMMANDS
+T9600 CON 84
+TXbaud CON T9600
+
+'SET VALUES TO MANAGE EXTERNAL EEPROM
+MemSize            CON  $FFFF     'Total memory available in EEPROM
+Data_Address_Max   VAR   Word
+block              VAR   Byte
+
+'SET VALUES TO CONTROL LED OUTPUT
+IsOn       CON   1    'LED will be on
+IsOff      CON   0    'LED will be off
+
+'----------------------------------------------------
+'*** Program Variables ***
+'----------------------------------------------------
+
+Datapoint_Addr   VAR  Word  'used to keep ract of memory locations in RAM for data.
+Datapoint_Count  VAR  Word  'used to control over the loop total number of loops.
+datapt           VAR  Word  'array used to hold values read from memory (2 bytes per variable)
+datasets         VAR  Word  'used to count number of datasets read from memory
+UsedSensors      VAR  Byte  'Number of sensors who value is stored in memory
+points           VAR  Byte  'Index for going through all used sensors
+i                VAR  Byte  'used in loop to blink LED on/off
+
+'----------------------------------------------------
+'*** Main Program ***
+'----------------------------------------------------
+
+Main:
+
+  'Blink LED on/off 4 times (quickly) when program starts
+  FOR i = 1 TO 4
+    RedLED = IsOn    'Turn on Red LED at Pin 7.
+    PAUSE 150        'Leave Red LED on for 0.15s
+    RedLED = IsOff   'Turn off Red LED at Pin 7.
+    PAUSE 150        'Wait 0.15s before reading next data set.
+  NEXT
+
+  'Determine number of datapoints currently in memory and number of sensors previously used.
+  STORE 0  'Go to slot 0
+  READ $00, Word Datapoint_Count          'Read number of datasets stored in EEPROM
+  READ $04, UsedSensors                   'Read the number of sensors used
+  Data_Address_Max = MemSize - (2*UsedSensors) - 2  'Set the value for the maximum address that can be used
+  datasets = 1
+  Datapoint_Addr = $0000
+  block = $00
+
+  'Print column headings in Excel
+  DEBUG "MSG,Start of retrieving data.", CR  'Display  message on command window
+  DEBUG "DATA,DataSet"  'print the labels for each column in the top row
+  FOR points = 1 TO UsedSensors
+    DEBUG ",SENSOR", DEC points
+  NEXT
+  DEBUG CR
+
+  RedLED = IsOn    'Turn on Red LED at Pin 7.
+  'Retrieve data from memory and copy into EXCEL.
+  DO WHILE(datasets <= Datapoint_Count)
+    DEBUG "DATA,", DEC datasets
+    FOR points = 1 TO UsedSensors
+      I2CIN 0, $A1+block, Datapoint_Addr.HIGHBYTE  \Datapoint_Addr.LOWBYTE, [datapt.HIGHBYTE, datapt.LOWBYTE]
+      DEBUG ",",DEC datapt
+      Datapoint_Addr = Datapoint_Addr + 2   'Move by one word (2 bytes) in RAM
+    NEXT
+    DEBUG CR
+    datasets = datasets + 1
+    IF(Datapoint_Addr >= Data_Address_Max) THEN  'Check if through reading first block
+        block = $08
+        Datapoint_Addr = $0000
+    ENDIF
+  LOOP
+
+  DEBUG "MSG,End of Retrieving Data", CR   'Display  message on command window
+  RedLED = IsOff    'Turn off Red LED at Pin 7.
+
+END      'End of main program
